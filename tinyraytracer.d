@@ -21,7 +21,7 @@ void render()
 
     foreach (i; 0 .. width * height)
         foreach (j; 0 .. 3)
-            ofile.write(cast(char) cast(ubyte)(255 * framebuffer[i][j].min(1.0).max(0.0)));
+            ofile.write(cast(char)(255 * framebuffer[i][j].min(1.0).max(0.0)));
 
     ofile.close();
 }
