@@ -28,6 +28,17 @@ float dotp(vec3f lhs, vec3f rhs)
     return sum;
 }
 
+class Light
+{
+    vec3f position;
+    float intensity;
+    this(vec3f position, float intensity)
+    {
+        this.position = position;
+        this.intensity = intensity;
+    }
+}
+
 class Material
 {
     vec3f diffuse_color;
@@ -84,23 +95,33 @@ bool intersectScene(vec3f orig, vec3f dir, Sphere[] spheres, ref vec3f hit,
             spheres_dist = dist_i;
             hit = orig[] + dir[] * dist_i;
             normal = hit[] - sphere.center[];
-            normal.normalize();
+            normal = normalize(normal);
             material = sphere.material;
         }
     }
     return spheres_dist < far;
 }
 
-vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres)
+vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights)
 {
     vec3f hit, normal;
     Material material;
     if (intersectScene(orig, dir, spheres, hit, normal, material))
-        return material.diffuse_color;
+    {
+        float diffuse_light_intensity = 0;
+        foreach (light; lights)
+        {
+            vec3f light_dir = light.position[] - hit[];
+            light_dir = normalize(light_dir);
+            diffuse_light_intensity += light.intensity * max(0.0, dotp(light_dir, normal));
+        }
+        vec3f r = material.diffuse_color[] * diffuse_light_intensity;
+        return r;
+    }
     return [0.2, 0.7, 0.8];
 }
 
-void render(Sphere[] spheres)
+void render(Sphere[] spheres, Light[] lights)
 {
     auto framebuffer = new vec3f[](width * height);
 
@@ -110,7 +131,7 @@ void render(Sphere[] spheres)
             float x = (2 * (i + 0.5) / cast(float) width - 1) * fovtan * aspect_ratio;
             float y = -(2 * (j + 0.5) / cast(float) height - 1) * fovtan;
             vec3f dir = [x, y, -1].normalize;
-            framebuffer[i + j * width] = castRay([0, 0, 0], dir, spheres);
+            framebuffer[i + j * width] = castRay([0, 0, 0], dir, spheres, lights);
         }
 
     auto ofile = File(filename, "w"); // write
@@ -136,5 +157,8 @@ void main()
     spheres ~= new Sphere([1.5, -0.5, -18.0], 3.0, red_rubber);
     spheres ~= new Sphere([7.0, 5.0, -18.0], 4.0, ivory);
 
-    render(spheres);
+    Light[] lights;
+    lights ~= new Light([-20, 20, 20], 1.5);
+
+    render(spheres, lights);
 }
