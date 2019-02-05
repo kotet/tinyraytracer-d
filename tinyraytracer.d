@@ -8,12 +8,12 @@ enum filename = "./out.ppm";
 
 enum fov = PI / 2.0; // 90
 enum far = 1000.0f;
+enum depth_limit = 4;
 
 enum fovtan = tan(fov / 2.0);
 enum aspect_ratio = width / cast(float) height;
 
 alias vec3f = float[3];
-alias vec2f = float[2];
 
 vec3f normalize(vec3f v)
 {
@@ -53,10 +53,10 @@ class Light
 
 class Material
 {
-    vec2f albedo; // 反射率
+    float[3] albedo; // 反射率
     vec3f diffuse_color;
     float specular_exponent; // 鏡面反射指数
-    this(vec2f albedo, vec3f color, float specular_exponent)
+    this(float[3] albedo, vec3f color, float specular_exponent)
     {
         this.albedo = albedo;
         this.diffuse_color = color;
@@ -125,14 +125,30 @@ bool intersectScene(vec3f orig, vec3f dir, Sphere[] spheres, ref vec3f hit,
     return spheres_dist < far;
 }
 
-vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights)
+vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t depth)
 {
     vec3f hit, normal;
     Material material;
-    if (intersectScene(orig, dir, spheres, hit, normal, material))
+    if (depth <= depth_limit && intersectScene(orig, dir, spheres, hit, normal, material))
     {
         float diffuse_light_intensity = 0;
         float specular_light_intensity = 0;
+        vec3f reflect_color;
+
+        {
+            vec3f reflect_dir = reflect(dir, normal).normalize();
+            vec3f reflect_orig = hit;
+            if (dotp(reflect_dir, normal) < 0)
+            {
+                reflect_orig[] -= normal[] * 1e-3;
+            }
+            else
+            {
+                reflect_orig[] += normal[] * 1e-3;
+            }
+            reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
+        }
+
         loop_lights: foreach (light; lights)
         {
             vec3f light_tmp = light.position[] - hit[];
@@ -167,8 +183,9 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights)
         }
         vec3f a = material.diffuse_color[] * diffuse_light_intensity * material.albedo[0];
         vec3f b = [1.0f, 1.0f, 1.0f] * specular_light_intensity * material.albedo[1];
-        vec3f c = a[] + b[];
-        return c;
+        vec3f c = reflect_color[] * material.albedo[2];
+        vec3f r = a[] + b[] + c[];
+        return r;
     }
     return [0.2, 0.7, 0.8];
 }
@@ -183,7 +200,7 @@ void render(Sphere[] spheres, Light[] lights)
             float x = (2 * (i + 0.5) / cast(float) width - 1) * fovtan * aspect_ratio;
             float y = -(2 * (j + 0.5) / cast(float) height - 1) * fovtan;
             vec3f dir = [x, y, -1].normalize;
-            framebuffer[i + j * width] = castRay([0, 0, 0], dir, spheres, lights);
+            framebuffer[i + j * width] = castRay([0, 0, 0], dir, spheres, lights, 0);
         }
 
     auto ofile = File(filename, "w"); // write
@@ -209,14 +226,15 @@ void render(Sphere[] spheres, Light[] lights)
 
 void main()
 {
-    Material ivory = new Material([0.6, 0.3], [0.4, 0.4, 0.3], 50.0);
-    Material red_rubber = new Material([0.9, 0.1], [0.3, 0.1, 0.1], 10.0);
+    Material ivory = new Material([0.6, 0.3, 0.1], [0.4, 0.4, 0.3], 50.0);
+    Material red_rubber = new Material([0.9, 0.1, 0.0], [0.3, 0.1, 0.1], 10.0);
+    Material mirror = new Material([0.0, 10.0, 0.8], [1.0, 1.0, 1.0], 1425);
 
     Sphere[] spheres;
     spheres ~= new Sphere([-3.0, 0.0, -16.0], 2.0, ivory);
-    spheres ~= new Sphere([-1.0, -1.5, -12.0], 2.0, red_rubber);
+    spheres ~= new Sphere([-1.0, -1.5, -12.0], 2.0, mirror);
     spheres ~= new Sphere([1.5, -0.5, -18.0], 3.0, red_rubber);
-    spheres ~= new Sphere([7.0, 5.0, -18.0], 4.0, ivory);
+    spheres ~= new Sphere([7.0, 5.0, -18.0], 4.0, mirror);
 
     Light[] lights;
     lights ~= new Light([-20, 20, 20], 1.5);
