@@ -35,6 +35,11 @@ float dotp(vec3f lhs, vec3f rhs)
     return sum;
 }
 
+float norm(vec3f v)
+{
+    return sqrt(dotp(v, v));
+}
+
 class Light
 {
     vec3f position;
@@ -128,10 +133,34 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights)
     {
         float diffuse_light_intensity = 0;
         float specular_light_intensity = 0;
-        foreach (light; lights)
+        loop_lights: foreach (light; lights)
         {
-            vec3f light_dir = light.position[] - hit[];
-            light_dir = normalize(light_dir);
+            vec3f light_tmp = light.position[] - hit[];
+            vec3f light_dir = normalize(light_tmp);
+
+            {
+                float light_dist = light_tmp.norm();
+                vec3f micro_normal = normal[] * 1e-3;
+                // hitの位置から光源に向かってscene_intersectを実行する。
+                // 自分と衝突しないように法線ベクトル方向にちょっとずらす
+                vec3f shadow_orig = hit;
+                if (dotp(light_dir, normal) < 0)
+                {
+                    shadow_orig[] -= micro_normal[];
+                }
+                else
+                {
+                    shadow_orig[] += micro_normal[];
+                }
+                vec3f shadow_hit, tmp_n;
+                Material tmp_m;
+                bool is_shadow_falls = intersectScene(shadow_orig, light_dir,
+                        spheres, shadow_hit, tmp_n, tmp_m);
+                vec3f shadow_dist = shadow_hit[] - shadow_orig[];
+                if (is_shadow_falls && shadow_dist.norm() < light_dist)
+                    continue loop_lights;
+            }
+
             diffuse_light_intensity += light.intensity * max(0.0, dotp(light_dir, normal));
             float r = max(0.0, dotp(reflect(light_dir.negate(), normal).negate(), dir));
             specular_light_intensity += (r ^^ material.specular_exponent) * light.intensity;
