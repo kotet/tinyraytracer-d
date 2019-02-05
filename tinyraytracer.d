@@ -13,11 +13,18 @@ enum fovtan = tan(fov / 2.0);
 enum aspect_ratio = width / cast(float) height;
 
 alias vec3f = float[3];
+alias vec2f = float[2];
 
 vec3f normalize(vec3f v)
 {
     vec3f w = v[] / sqrt(dotp(v, v));
     return w;
+}
+
+vec3f negate(vec3f v)
+{
+    vec3f r = -v[];
+    return r;
 }
 
 float dotp(vec3f lhs, vec3f rhs)
@@ -41,10 +48,14 @@ class Light
 
 class Material
 {
+    vec2f albedo; // 反射率
     vec3f diffuse_color;
-    this(vec3f color)
+    float specular_exponent; // 鏡面反射指数
+    this(vec2f albedo, vec3f color, float specular_exponent)
     {
+        this.albedo = albedo;
         this.diffuse_color = color;
+        this.specular_exponent = specular_exponent;
     }
 }
 
@@ -75,6 +86,13 @@ class Sphere
             return false;
         return true;
     }
+}
+
+// 法線ベクトルに従ってIを反射
+vec3f reflect(vec3f I, vec3f normal)
+{
+    vec3f r = I[] - normal[] * 2.0f * dotp(I, normal);
+    return r;
 }
 
 /**
@@ -109,14 +127,19 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights)
     if (intersectScene(orig, dir, spheres, hit, normal, material))
     {
         float diffuse_light_intensity = 0;
+        float specular_light_intensity = 0;
         foreach (light; lights)
         {
             vec3f light_dir = light.position[] - hit[];
             light_dir = normalize(light_dir);
             diffuse_light_intensity += light.intensity * max(0.0, dotp(light_dir, normal));
+            float r = max(0.0, dotp(reflect(light_dir.negate(), normal).negate(), dir));
+            specular_light_intensity += (r ^^ material.specular_exponent) * light.intensity;
         }
-        vec3f r = material.diffuse_color[] * diffuse_light_intensity;
-        return r;
+        vec3f a = material.diffuse_color[] * diffuse_light_intensity * material.albedo[0];
+        vec3f b = [1.0f, 1.0f, 1.0f] * specular_light_intensity * material.albedo[1];
+        vec3f c = a[] + b[];
+        return c;
     }
     return [0.2, 0.7, 0.8];
 }
@@ -140,16 +163,25 @@ void render(Sphere[] spheres, Light[] lights)
     ofile.writeln(255);
 
     foreach (i; 0 .. width * height)
+    {
+        vec3f c = framebuffer[i];
+        float max = c[0].max(c[1]).max(c[2]);
+        if (1 < max)
+        {
+            framebuffer[i][] *= (1 / max);
+            // framebuffer[i] = [1.0, 0.0, 0.0];
+        }
         foreach (j; 0 .. 3)
             ofile.write(cast(char)(255 * framebuffer[i][j].min(1.0).max(0.0)));
+    }
 
     ofile.close();
 }
 
 void main()
 {
-    Material ivory = new Material([0.4, 0.4, 0.3]);
-    Material red_rubber = new Material([0.3, 0.1, 0.1]);
+    Material ivory = new Material([0.6, 0.3], [0.4, 0.4, 0.3], 50.0);
+    Material red_rubber = new Material([0.9, 0.1], [0.3, 0.1, 0.1], 10.0);
 
     Sphere[] spheres;
     spheres ~= new Sphere([-3.0, 0.0, -16.0], 2.0, ivory);
@@ -159,6 +191,8 @@ void main()
 
     Light[] lights;
     lights ~= new Light([-20, 20, 20], 1.5);
+    lights ~= new Light([30, 50, -25], 1.8);
+    lights ~= new Light([30, 20, 30], 1.7);
 
     render(spheres, lights);
 }
