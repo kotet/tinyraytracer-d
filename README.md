@@ -1,0 +1,3 @@
+```console
+$ rdmd tinyraytracer.d
+```
