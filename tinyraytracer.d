@@ -1,8 +1,10 @@
 import std.stdio;
 import std.algorithm : min, max, swap;
-import std.math : sqrt, PI, tan, abs;
+import std.math : sqrt, PI, tan, abs, atan2;
 import std.parallelism : parallel;
 import std.range : iota;
+
+import ppmreader;
 
 enum width = 1024;
 enum height = 768;
@@ -11,6 +13,7 @@ enum filename = "./out.ppm";
 enum fov = PI / 2.0; // 90
 enum far = 1000.0f;
 enum depth_limit = 4;
+enum envmap_offset = 0;
 
 enum fovtan = tan(fov / 2.0);
 enum aspect_ratio = width / cast(float) height;
@@ -172,7 +175,7 @@ bool intersectScene(vec3f orig, vec3f dir, Sphere[] spheres, ref vec3f hit,
     return min(spheres_dist, checkerboard_dist) < far;
 }
 
-vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t depth)
+vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, Envmap envmap, size_t depth)
 {
     vec3f hit, normal;
     Material material;
@@ -194,7 +197,7 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t de
             {
                 reflect_orig[] += normal[] * 1e-3;
             }
-            reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
+            reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, envmap, depth + 1);
         }
 
         {
@@ -208,7 +211,7 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t de
             {
                 refract_orig[] += normal[] * 1e-3;
             }
-            refract_color = castRay(refract_orig, refract_dir, spheres, lights, depth + 1);
+            refract_color = castRay(refract_orig, refract_dir, spheres, lights, envmap, depth + 1);
         }
 
         loop_lights: foreach (light; lights)
@@ -250,10 +253,19 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t de
         vec3f r = a[] + b[] + c[] + d[];
         return r;
     }
-    return [0.2, 0.7, 0.8];
+
+    float theta = atan2(dir[2], dir[0]);
+    float phi = -atan2(dir[1], sqrt(dir[2] ^^ 2 + dir[0] ^^ 2));
+
+    size_t x = cast(size_t)((((theta + PI) / (PI * 2)) * envmap.width).min(envmap.width).max(0));
+    size_t y = cast(size_t)((((phi + PI) / (PI * 2)) * envmap.height).min(envmap.height).max(0));
+
+    x = (x + envmap_offset) % envmap.width;
+
+    return envmap.v[y * envmap.width + x];
 }
 
-void render(Sphere[] spheres, Light[] lights)
+void render(Sphere[] spheres, Light[] lights, Envmap envmap)
 {
     auto framebuffer = new vec3f[](width * height);
 
@@ -263,7 +275,7 @@ void render(Sphere[] spheres, Light[] lights)
             float x = (2 * (i + 0.5) / cast(float) width - 1) * fovtan * aspect_ratio;
             float y = -(2 * (j + 0.5) / cast(float) height - 1) * fovtan;
             vec3f dir = [x, y, -1].normalize;
-            framebuffer[i + j * width] = castRay([0, 0, 0], dir, spheres, lights, 0);
+            framebuffer[i + j * width] = castRay([0, 0, 0], dir, spheres, lights, envmap, 0);
         }
 
     auto ofile = File(filename, "w"); // write
@@ -278,7 +290,6 @@ void render(Sphere[] spheres, Light[] lights)
         if (1 < max)
         {
             framebuffer[i][] *= (1 / max);
-            // framebuffer[i] = [1.0, 0.0, 0.0];
         }
         foreach (j; 0 .. 3)
             ofile.write(cast(char)(255 * framebuffer[i][j].min(1.0).max(0.0)));
@@ -305,5 +316,8 @@ void main()
     lights ~= new Light([30, 50, -25], 1.8);
     lights ~= new Light([30, 20, 30], 1.7);
 
-    render(spheres, lights);
+    Envmap envmap = new Envmap("envmap.ppm");
+    // writeln(envmap.v);
+
+    render(spheres, lights, envmap);
 }
