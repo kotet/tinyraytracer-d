@@ -1,6 +1,8 @@
 import std.stdio;
 import std.algorithm : min, max, swap;
 import std.math : sqrt, PI, tan, abs;
+import std.parallelism : parallel;
+import std.range : iota;
 
 enum width = 1024;
 enum height = 768;
@@ -255,7 +257,7 @@ void render(Sphere[] spheres, Light[] lights)
 {
     auto framebuffer = new vec3f[](width * height);
 
-    foreach (j; 0 .. height)
+    foreach (j; iota(height).parallel())
         foreach (i; 0 .. width)
         {
             float x = (2 * (i + 0.5) / cast(float) width - 1) * fovtan * aspect_ratio;
