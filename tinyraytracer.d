@@ -1,6 +1,6 @@
 import std.stdio;
 import std.algorithm : min, max, swap;
-import std.math : sqrt, PI, tan;
+import std.math : sqrt, PI, tan, abs;
 
 enum width = 1024;
 enum height = 768;
@@ -149,7 +149,25 @@ bool intersectScene(vec3f orig, vec3f dir, Sphere[] spheres, ref vec3f hit,
             material = sphere.material;
         }
     }
-    return spheres_dist < far;
+
+    float checkerboard_dist = float.max;
+    if (1e-3 < abs(dir[1]))
+    {
+        float d = -(orig[1] + 4) / dir[1];
+        vec3f pt = orig[] + dir[] * d;
+        if (0 < d && d < spheres_dist)
+        {
+            checkerboard_dist = d;
+            hit = pt;
+            normal = [0.0, 1.0, 0.0];
+            bool checker = (cast(int)(0.5 * hit[0] + 1000) + cast(int)(0.5 * hit[2])) & 1;
+            vec3f diffuse_color = (checker ? [1.0, 1.0, 1.0] : [1.0, 0.7, 0.3]);
+            material = new Material(1.0, [1, 0, 0, 0], diffuse_color, 50.0);
+            material.diffuse_color[] *= 0.3;
+        }
+    }
+
+    return min(spheres_dist, checkerboard_dist) < far;
 }
 
 vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t depth)
