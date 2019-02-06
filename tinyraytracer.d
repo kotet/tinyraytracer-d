@@ -1,5 +1,5 @@
 import std.stdio;
-import std.algorithm : min, max;
+import std.algorithm : min, max, swap;
 import std.math : sqrt, PI, tan;
 
 enum width = 1024;
@@ -53,11 +53,13 @@ class Light
 
 class Material
 {
-    float[3] albedo; // 反射率
+    float refractive_index; // 屈折率
+    float[4] albedo; // 反射率
     vec3f diffuse_color;
     float specular_exponent; // 鏡面反射指数
-    this(float[3] albedo, vec3f color, float specular_exponent)
+    this(float refractive_index, float[4] albedo, vec3f color, float specular_exponent)
     {
+        this.refractive_index = refractive_index;
         this.albedo = albedo;
         this.diffuse_color = color;
         this.specular_exponent = specular_exponent;
@@ -100,6 +102,31 @@ vec3f reflect(vec3f I, vec3f normal)
     return r;
 }
 
+vec3f refract(vec3f I, vec3f normal, float refractive_index)
+{
+    float cosi = -dotp(I, normal).min(1.0).max(-1.0); // cos(入射角)
+    float etai = 1.0;
+    float etat = refractive_index;
+    vec3f N = normal;
+    if (cosi < 0)
+    {
+        cosi = -cosi;
+        swap(etai, etat);
+        N = N.negate();
+    }
+    float eta = etai / etat;
+    float k = 1 - eta * eta * (1 - cosi * cosi);
+    if (k < 0)
+    {
+        return [0.0, 0.0, 0.0];
+    }
+    else
+    {
+        vec3f r = I[] * eta + N[] * (eta * cosi - sqrt(k));
+        return r;
+    }
+}
+
 /**
     hit:        ヒット座標
     normal:     ヒットした面の法線ベクトル
@@ -134,6 +161,7 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t de
         float diffuse_light_intensity = 0;
         float specular_light_intensity = 0;
         vec3f reflect_color;
+        vec3f refract_color;
 
         {
             vec3f reflect_dir = reflect(dir, normal).normalize();
@@ -147,6 +175,20 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t de
                 reflect_orig[] += normal[] * 1e-3;
             }
             reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
+        }
+
+        {
+            vec3f refract_dir = refract(dir, normal, material.refractive_index).normalize();
+            vec3f refract_orig = hit;
+            if (dotp(refract_dir, normal) < 0)
+            {
+                refract_orig[] -= normal[] * 1e-3;
+            }
+            else
+            {
+                refract_orig[] += normal[] * 1e-3;
+            }
+            refract_color = castRay(refract_orig, refract_dir, spheres, lights, depth + 1);
         }
 
         loop_lights: foreach (light; lights)
@@ -184,7 +226,8 @@ vec3f castRay(vec3f orig, vec3f dir, Sphere[] spheres, Light[] lights, size_t de
         vec3f a = material.diffuse_color[] * diffuse_light_intensity * material.albedo[0];
         vec3f b = [1.0f, 1.0f, 1.0f] * specular_light_intensity * material.albedo[1];
         vec3f c = reflect_color[] * material.albedo[2];
-        vec3f r = a[] + b[] + c[];
+        vec3f d = refract_color[] * material.albedo[3];
+        vec3f r = a[] + b[] + c[] + d[];
         return r;
     }
     return [0.2, 0.7, 0.8];
@@ -226,13 +269,14 @@ void render(Sphere[] spheres, Light[] lights)
 
 void main()
 {
-    Material ivory = new Material([0.6, 0.3, 0.1], [0.4, 0.4, 0.3], 50.0);
-    Material red_rubber = new Material([0.9, 0.1, 0.0], [0.3, 0.1, 0.1], 10.0);
-    Material mirror = new Material([0.0, 10.0, 0.8], [1.0, 1.0, 1.0], 1425);
+    Material ivory = new Material(1.0, [0.6, 0.3, 0.1, 0.0], [0.4, 0.4, 0.3], 50.0);
+    Material glass = new Material(1.5, [0.0, 0.5, 0.1, 0.8], [0.6, 0.7, 0.8], 125.0);
+    Material red_rubber = new Material(1.0, [0.9, 0.1, 0.0, 0.0], [0.3, 0.1, 0.1], 10.0);
+    Material mirror = new Material(1.0, [0.0, 10.0, 0.8, 0.0], [1.0, 1.0, 1.0], 1425);
 
     Sphere[] spheres;
     spheres ~= new Sphere([-3.0, 0.0, -16.0], 2.0, ivory);
-    spheres ~= new Sphere([-1.0, -1.5, -12.0], 2.0, mirror);
+    spheres ~= new Sphere([-1.0, -1.5, -12.0], 2.0, glass);
     spheres ~= new Sphere([1.5, -0.5, -18.0], 3.0, red_rubber);
     spheres ~= new Sphere([7.0, 5.0, -18.0], 4.0, mirror);
 
