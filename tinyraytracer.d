@@ -317,7 +317,6 @@ void main()
     lights ~= new Light([30, 20, 30], 1.7);
 
     Envmap envmap = new Envmap("envmap.ppm");
-    // writeln(envmap.v);
 
     render(spheres, lights, envmap);
 }

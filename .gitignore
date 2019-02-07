@@ -1,4 +1,4 @@
-*.ppm
+out.ppm
 *.d.cg
 *.o
 tinyraytracer
